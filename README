@@ -1,0 +1,54 @@
+
+Overview
+========
+
+CommChannel manages up to three hidden communication channels, "guild", "raid"
+and "sync". Each clients that wants to use a comm-channel needs to create an
+interface - a simple table with functions. This interface is registered
+together with the channel name and a module name. The channel name is one of
+"guild", "raid" and "sync", the module name should be unique name that
+identifies the client within that channel.
+
+If a client wants to send a message to the channel, it needs to know the
+channel name, module name, function name and optional the function arguments.
+CommChannel then encodes the message and sends it to the channel. The messages
+that are sent to the channel look just like function calls. For example:
+HealSync:Start("MyTargetName","FlashHeal",1500,89)
+
+Upon receiving a message, CommChannel verifies that it comes from a valid
+source, eg. from a raid member for messages in the "raid" channel etc. Then it
+parses the message into 'module name', 'functio name' and 'function arguments'.
+It then checks if there is a registered interface with the module name and if
+the interface contains a function with the given name. If that's true, it
+parses the function arguments and calls the function.
+
+
+
+Public API
+==========
+
+
+client = CommChannel:Create(channel, module, iface)
+
+Registers an interface in the channel 'channel' under the name 'module'.
+Returns nil if there already is a module with the name registered, a client
+object if the registration was successful. The client object can be used to
+send messages to the channel by calling 'client:Call(func, ...)'.
+See also: CommChannel:Call(...)
+
+
+
+CommChannel:Destroy(channel, module)
+
+Destroys the module and schedules a channel update (in case this module was the
+last registered module, CommChannel will leave the channel).
+
+
+
+CommChannel:Call(channel, module, func, ...)
+
+Sends a message to the channel 'channel', making all clients execute the
+function 'func' from the interface registered under the name 'module' with the
+given arguments. You also can use the client object returned by
+CommChannel:Create(...) which will automatically fill in 'channel' and 'module'
+for you and call CommChannel:Call(...).

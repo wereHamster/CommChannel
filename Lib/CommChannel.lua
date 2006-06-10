@@ -61,7 +61,7 @@ end
 
 local function onEvent()
 	if (event == "CHAT_MSG_CHANNEL") then
-		for _, Spec in self.Specs do
+		for _, Spec in lib.Specs do
 			if (Spec.Current and arg8 == GetChannelName(Spec.Current)) then
 				if (Spec.Sender.Validate(arg2)) then
 					local _, _, module, func, argString = string.find(arg1, "(%a+):(%a+)%((.*)%)")
@@ -164,7 +164,7 @@ function lib:Manage()
 end
 
 function lib:ChannelSpec(channel, spec)
-	local sig = string.format("CommChannel:Channel(%s, [spec])", name)
+	local sig = string.format("CommChannel:Channel(%s, [spec])", channel)
 	if (self.Specs == nil) then
 		self.Specs = { }
 	end
@@ -231,6 +231,8 @@ end
 ]]
 
 local clientInterface = { }
+local clientMetatable = { __index = clientInterface }
+
 function clientInterface:Call(func, ...)
 	lib:Call(self.channel, self.module, func, unpack(arg))
 end
@@ -256,7 +258,7 @@ function lib:Create(channel, module, iface)
 	Spec.Modules[module] = iface
 
 	local clientModule = { }
-	setmetatable(clientModule, { __index = clientInterface })
+	setmetatable(clientModule, clientMetatable)
 	clientModule.channel = channel
 	clientModule.module = module
 
