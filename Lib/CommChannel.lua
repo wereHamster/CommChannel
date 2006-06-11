@@ -24,12 +24,10 @@ local stub = getglobal(libName)
 local lib = stub(libMajor)
 if (lib == nil) then
 	lib = stub(libMajor, libMinor)
-elseif (lib.libVersion) then
-	if (lib.libVersion >= libMinor) then
-		return
-	else
-		lib.libVersion = libMinor
-	end
+elseif (lib.libVersion >= libMinor) then
+	return
+else
+	lib.libVersion = libMinor
 end
 
 --[[
@@ -64,6 +62,8 @@ local function onEvent()
 		for _, Spec in lib.Specs do
 			if (Spec.Current and arg8 == GetChannelName(Spec.Current)) then
 				if (Spec.Sender.Validate(arg2)) then
+					arg1 = string.gsub(arg1, "⢳", "s")
+					arg1 = string.gsub(arg1, "⡽", "S")
 					local _, _, module, func, argString = string.find(arg1, "(%a+):(%a+)%((.*)%)")
 					if (module and func and argString) then
 						local object = Spec.Modules[module]
@@ -75,7 +75,7 @@ local function onEvent()
 								
 								local argList = { pcall(argFunc) }
 								if (argList[1]) then
-									argList[1] = moduleObject
+									argList[1] = module
 									object[func](unpack(argList))
 								end
 							end
@@ -90,7 +90,7 @@ local function onEvent()
 			if (lib.Slave.Delay < channelDelay) then
 				lib.Slave.Delay = channelDelay
 				lib.Slave:Show()
-				DEFAULT_CHAT_FRAME:AddMessage("Going to manage channels due to "..event)
+--				DEFAULT_CHAT_FRAME:AddMessage("Going to manage channels due to "..event)
 			end
 		end
 	end
@@ -98,20 +98,19 @@ end
 
 local function onUpdate()
 	-- TODO: use CHAT_MSG_CHANNEL_NOTICE to find out when we've joined the channels
-	
 	if (arg1 > 1/5) then
 		return
 	end
 	
-	delay = delay - arg1
-	if (delay < 0) then
+	lib.Slave.Delay = lib.Slave.Delay - arg1
+	if (lib.Slave.Delay < 0) then
 		lib:Manage()
-		this:Hide()
+		lib.Slave:Hide()
 	end
 end
 
 if (lib.Slave == nil) then
-	lib.Slave = CreateFrame("Frame", "HealSyncSlave")
+	lib.Slave = CreateFrame("Frame", "CommChannelSlave")
 
 	lib.Slave:RegisterEvent("PLAYER_ENTERING_WORLD")
 	lib.Slave:RegisterEvent("GUILD_ROSTER_UPDATE")
@@ -165,10 +164,7 @@ end
 
 function lib:ChannelSpec(channel, spec)
 	local sig = string.format("CommChannel:Channel(%s, [spec])", channel)
-	if (self.Specs == nil) then
-		self.Specs = { }
-	end
-
+	
 	self.Specs[channel] = spec
 end
 
@@ -299,13 +295,15 @@ function lib:Call(channel, module, func, ...)
 	local statusSuccess, objectString = pcall(serializeObject, arg)
 	
 	if (not statusSuccess) then
-		local errorString = string.gsub(objectString, "Interface\\AddOns\\CommChannel\\CommChannel.lua:(%d+): ", "")
+		local errorString = string.gsub(objectString, "Interface\\AddOns\\(.*)\\CommChannel.lua:(%d+): ", "")
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..errorString)
 		return
 	end
 	
 	local serializedString = string.sub(objectString, 2, string.len(objectString) - 1)
 	local channelMessage = module..":"..func.."("..serializedString..")"
+	channelMessage = string.gsub(channelMessage, "s", "⢳")
+	channelMessage = string.gsub(channelMessage, "S", "⡽")
 	
 	if (string.len(channelMessage) > 255) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": channelMessage too big")
@@ -319,18 +317,3 @@ function lib:Call(channel, module, func, ...)
 --		DEFAULT_CHAT_FRAME:AddMessage(sig..": no active channel")
 	end
 end
-
-
-
-
-this = CreateFrame("Frame", "HealSyncSlave")
-
-this:RegisterEvent("PLAYER_ENTERING_WORLD")
---this:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
-this:RegisterEvent("GUILD_ROSTER_UPDATE")
-this:RegisterEvent("PARTY_MEMBERS_CHANGED")
-this:RegisterEvent("RAID_ROSTER_UPDATE")
-this:RegisterEvent("CHAT_MSG_CHANNEL")
-
-this:SetScript("OnEvent", onEvent)
-this:SetScript("OnUpdate", onUpdate)

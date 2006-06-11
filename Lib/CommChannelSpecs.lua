@@ -1,5 +1,9 @@
 
 local CommChannel = CommChannel("1.0")
+if (CommChannel.Specs) then
+	return
+end
+CommChannel.Specs = { }
 
 --[[
 	Guild Channel

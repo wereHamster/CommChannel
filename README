@@ -52,3 +52,5 @@ function 'func' from the interface registered under the name 'module' with the
 given arguments. You also can use the client object returned by
 CommChannel:Create(...) which will automatically fill in 'channel' and 'module'
 for you and call CommChannel:Call(...).
+Note: you also can pass numbers and tables as the additional function
+arguments. CommChannel:Call(...) automatically serializes them into a string.
