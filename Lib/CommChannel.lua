@@ -75,7 +75,7 @@ local function onEvent()
 								
 								local argList = { pcall(argFunc) }
 								if (argList[1]) then
-									argList[1] = module
+									argList[1] = object
 									object[func](unpack(argList))
 								end
 							end
