@@ -1,9 +1,31 @@
 
 local CommChannel = CommChannel("1.0")
-if (CommChannel.Specs) then
-	return
+oldChannels = CommChannel.Channels or { }
+CommChannel.Channels = { }
+
+--[[
+	Helper Functions
+]]
+
+local function strip(name)
+  return string.gsub(name, "%W", "")
 end
-CommChannel.Specs = { }
+
+local limit = tonumber("FFFFFF", 16)
+local function crc(text)
+    local counter = 1
+    
+    for i = 1,string.len(text) do
+        counter = counter + (string.byte(text, i) * 17 * i)
+    end
+    
+    counter = math.mod(counter, limit)
+    return string.format("%06X", counter)
+end
+
+local function build(token, length)
+	return string.sub(strip(token), 1, length)..crc(token)
+end
 
 --[[
 	Guild Channel
@@ -12,10 +34,7 @@ local function nameGenerate()
 	local guildName = GetGuildInfo("player")
 	
 	if (guildName) then
-		-- remove whitespaces
-		guildName = string.gsub(guildName, "[^%w]", "");
-		
-		return "guildChannel"..guildName
+		return "CommGu"..build(guildName, 8)
 	end
 	
 	return nil
@@ -30,32 +49,47 @@ end
 
 local guildChannel = {
 	Name = {
-		Regexp = "^guildChannel(.+)$",
+		Regexp = "^CommGu(.+)$",
 		Generate = nameGenerate,
 	},
 	Sender = {
 		Validate = senderValidate,
 	},
 	Current = nil,
-	Modules = { },
 }
 
-CommChannel:ChannelSpec("guild", guildChannel)
+CommChannel:ChannelSpec("guild", guildChannel, oldChannels["guild"])
 
 
 --[[
-	Raid Channel
+	Group Channel
 ]]
 
-local function nameGenerate()
+local function getLeader()
 	for raidID=1,GetNumRaidMembers() do
 		local unitName, unitRank = GetRaidRosterInfo(raidID)
 		if (unitRank == 2) then
-			return "raidChannel"..unitName
+			return unitName
 		end
 	end
 	
+	if (IsPartyLeader()) then
+		return UnitName("player")
+	elseif (GetNumPartyMembers() > 0) then
+		return UnitName("party"..GetPartyLeaderIndex())
+	end
+	
 	return nil
+end
+
+local function nameGenerate()
+	local unitName = getLeader()
+	
+	if (unitName) then
+		return "CommRa"..build(unitName, 8)
+	else
+		return nil
+	end
 end
 
 local function senderValidate(senderName)
@@ -68,74 +102,15 @@ local function senderValidate(senderName)
 	return false
 end
 
-local raidChannel = {
+local groupChannel = {
 	Name = {
-		Regexp = "^raidChannel(.+)$",
+		Regexp = "^CommRa(.+)$",
 		Generate = nameGenerate,
 	},
 	Sender = {
 		Validate = senderValidate,
 	},
 	Current = nil,
-	Modules = { },
 }
 
-CommChannel:ChannelSpec("raid", raidChannel)
-
-
---[[
-	Sync Channel
-]]
-
-local function nameGenerate()
-	for raidID=1,GetNumRaidMembers() do
-		local unitName, unitRank = GetRaidRosterInfo(raidID)
-		if (unitRank == 2) then
-			return "syncChannel"..unitName
-		end
-	end
-	
-	if (IsPartyLeader()) then
-		return "syncChannel"..UnitName("player")
-	elseif (GetNumPartyMembers() > 0) then
-		return "syncChannel"..UnitName("party"..GetPartyLeaderIndex())
-	end
-	
-	return nil
-end
-
-local function senderValidate(senderName)
-	for raidID=1,GetNumRaidMembers() do
-		local raidName = GetRaidRosterInfo(raidID)
-		if (raidName == senderName) then
-			return true
-		end
-	end
-	
-	for partyID=1,GetNumPartyMembers() do
-		if (UnitName("party"..partyID) == senderName) then
-			return true
-		end
-	end
-	
-	if (UnitName("player") == senderName) then
-		return true
-	end
-	
-	return false
-end
-
-
-local syncChannel = {
-	Name = {
-		Regexp = "^syncChannel(.+)$",
-		Generate = nameGenerate,
-	},
-	Sender = {
-		Validate = senderValidate,
-	},
-	Current = nil,
-	Modules = { },
-}
-
-CommChannel:ChannelSpec("sync", syncChannel)
+CommChannel:ChannelSpec("group", groupChannel, oldChannels["group"])

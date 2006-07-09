@@ -38,62 +38,64 @@ end
 	Manager Frame
 ]]
 
-local delay = 0
 local delayMap = {
 	["PLAYER_ENTERING_WORLD"] = 8,
 	["GUILD_ROSTER_UPDATE"] = 4,
 	["PARTY_MEMBERS_CHANGED"] = 2,
 	["RAID_ROSTER_UPDATE"] = 2,
+	["CHAT_MSG_RAID"] = 2,
 }
 
-local memoizeResults = { }
-setmetatable(memoizeResults, { __mode = "kv" })
+local argLists = { }
+setmetatable(argLists, { __mode = "kv" })
 
-local function memoizeLoadstring(s)
-	if (memoizeResults[s] == nil) then
-		memoizeResults[s] = loadstring("return "..s)
+local function loadArgs(s)
+	if (argLists[s] == nil) then
+		argFunc = loadstring("return "..s)
+		if (argFunc) then
+			setfenv(argFunc, { })
+			argList = { pcall(argFunc) }
+			if (argList[1]) then
+				argLists[s] = argList
+			end
+		end
 	end
 
-	return memoizeResults[s]
+	return argLists[s]
 end
 
 local function onEvent()
 	if (event == "CHAT_MSG_CHANNEL") then
-		for _, Spec in lib.Specs do
-			if (Spec.Current and arg8 == GetChannelName(Spec.Current)) then
-				if (Spec.Sender.Validate(arg2)) then
+		for _, Channel in lib.Channels do
+			if (Channel.Spec.Current and arg8 == GetChannelName(Channel.Spec.Current)) then
+				if (Channel.Spec.Sender.Validate(arg2)) then
 					arg1 = string.gsub(arg1, "⢳", "s")
 					arg1 = string.gsub(arg1, "⡽", "S")
-					local _, _, module, func, argString = string.find(arg1, "(%a+):(%a+)%((.*)%)")
+					local _, _, module, func, argString = string.find(arg1, "(%a-):(%a-)%((.*)%)")
 					if (module and func and argString) then
-						local object = Spec.Modules[module]
+						local object = Channel.Modules[module]
 						if (object and object[func]) then
-							local argFunc = memoizeLoadstring(argString)
+							local argList = loadArgs(argString)
 							
-							if (argFunc) then
-								setfenv(argFunc, { })
-								
-								local argList = { pcall(argFunc) }
-								if (argList[1]) then
-									argList[1] = object
-									object[func](unpack(argList))
-								end
+							if (argList) then
+								argList[1] = object
+								object[func](unpack(argList))
 							end
 						end
 					end
 				end
 			end
 		end
-	else
-		local channelDelay = delayMap[event]
-		if (channelDelay) then
-			if (lib.Slave.Delay < channelDelay) then
-				lib.Slave.Delay = channelDelay
-				lib.Slave:Show()
---				DEFAULT_CHAT_FRAME:AddMessage("Going to manage channels due to "..event)
-			end
+		
+		return
+	elseif (event == "CHAT_MSG_RAID") then
+		local _, _, token = string.find(arg1, "Securing CommChannel: (.*)")
+		if (token) then
+			lib.Channels["raid"].Spec.Name.Token = (token == "(none)") and nil or token
 		end
 	end
+	
+	lib:UpdateChannels(assert(delayMap[event]))
 end
 
 local function onUpdate()
@@ -104,8 +106,17 @@ local function onUpdate()
 	
 	lib.Slave.Delay = lib.Slave.Delay - arg1
 	if (lib.Slave.Delay < 0) then
-		lib:Manage()
-		lib.Slave:Hide()
+		if (lib.Slave.Action == "Leave") then
+			lib.Slave.Action = "Join"
+			lib.Slave.Delay = 1
+			
+			leaveChannels()
+		else
+			lib.Slave.Action = nil
+			lib.Slave:Hide()
+			
+			joinChannels()
+		end
 	end
 end
 
@@ -117,6 +128,7 @@ if (lib.Slave == nil) then
 	lib.Slave:RegisterEvent("PARTY_MEMBERS_CHANGED")
 	lib.Slave:RegisterEvent("RAID_ROSTER_UPDATE")
 	lib.Slave:RegisterEvent("CHAT_MSG_CHANNEL")
+	lib.Slave:RegisterEvent("CHAT_MSG_RAID")
 
 	lib.Slave:SetScript("OnEvent", onEvent)
 	lib.Slave:SetScript("OnUpdate", onUpdate)
@@ -126,22 +138,14 @@ end
 
 
 --[[
-	Private Interface
+	Private Functions
 ]]
 
-function lib:Manage()
---	local sig = string.format("CommChannel:Manage()")
+function leaveChannels()
+--	local sig = string.format("leaveChannels()")
 
-	for _, Spec in self.Specs do		
-		if (next(Spec.Modules)) then
-			Spec.Current = Spec.Name.Generate()
-			if (Spec.Current) then
-				Spec.Current = string.sub(Spec.Current, 1, 26)
-				JoinChannelByName(Spec.Current)
-				
---				DEFAULT_CHAT_FRAME:AddMessage(sig..": joining: "..Spec.Current)
-			end
-		end
+	for k, Channel in lib.Channels do
+		Channel.Spec.Current = next(Channel.Modules) and Channel.Spec.Name.Generate() or nil
 		
 		local channelList = { GetChannelList() }
 		local channelListCount = table.getn(channelList)
@@ -149,11 +153,11 @@ function lib:Manage()
 		for listIndex=1, channelListCount, 2 do
 			local chatChannelName = channelList[listIndex + 1]
 			
-			if (string.find(chatChannelName, Spec.Name.Regexp)) then
-				if (chatChannelName ~= Spec.Current) then
+			if (string.find(chatChannelName, Channel.Spec.Name.Regexp)) then
+				if (chatChannelName ~= Channel.Spec.Current) then
 --					DEFAULT_CHAT_FRAME:AddMessage(sig..": leaving stale channel: "..chatChannelName)
 					LeaveChannelByName(chatChannelName)
-				elseif (next(Spec.Modules) == nil) then
+				elseif (next(Channel.Modules) == nil) then
 --					DEFAULT_CHAT_FRAME:AddMessage(sig..": leaving channel with no registered modules "..chatChannelName)
 					LeaveChannelByName(chatChannelName)
 				end
@@ -162,10 +166,35 @@ function lib:Manage()
 	end
 end
 
-function lib:ChannelSpec(channel, spec)
-	local sig = string.format("CommChannel:Channel(%s, [spec])", channel)
-	
-	self.Specs[channel] = spec
+function joinChannels()
+--	local sig = string.format("joinChannels()")
+
+	for k, Channel in lib.Channels do
+		if (next(Channel.Modules)) then
+			if (Channel.Spec.Current) then
+				Channel.Spec.Current = string.sub(Channel.Spec.Current, 1, 26)
+				JoinChannelByName(Channel.Spec.Current)
+				
+--				DEFAULT_CHAT_FRAME:AddMessage(sig..": joining: "..Channel.Spec.Current)
+			end
+		end
+	end
+end
+
+function lib:UpdateChannels(delay)
+	if (lib.Slave.Delay < delay or lib.Slave.Action == "Join") then
+		lib.Slave.Delay = delay
+		lib.Slave.Action = "Leave"
+		lib.Slave:Show()
+	end
+end
+
+function lib:ChannelSpec(channel, spec, old)
+--	local sig = string.format("CommChannel:Channel(%s, [spec])", channel)
+
+	self.Channels[channel] = { }
+	self.Channels[channel].Spec = spec
+	self.Channels[channel].Modules = old and old.Modules or { }
 end
 
 
@@ -235,13 +264,13 @@ end
 
 function lib:Create(channel, module, iface)
 	local sig = string.format("CommChannel:Create(%q, %q, [iface])", channel, module)
-	local Spec = self.Specs[channel]
-	if (Spec == nil) then
+	local Channel = self.Channels[channel]
+	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
 		return
 	end
 	
-	if (Spec.Modules[module]) then
+	if (Channel.Modules[module]) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": module is already registered")
 		return
 	end
@@ -251,7 +280,7 @@ function lib:Create(channel, module, iface)
 		return
 	end
 	
-	Spec.Modules[module] = iface
+	Channel.Modules[module] = iface
 
 	local clientModule = { }
 	setmetatable(clientModule, clientMetatable)
@@ -263,57 +292,74 @@ end
 
 function lib:Destroy(channel, module)
 	local sig = string.format("CommChannel:Destroy(%q, %q)", channel, module)
-	local Spec = self.Specs[channel]
-	if (Spec == nil) then
+	local Channel = self.Channels[channel]
+	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
 		return
 	end
 	
-	if (Spec.Modules[module] == nil) then
+	if (Channel.Modules[module] == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": module is not registered")
 		return
 	end
 	
-	Spec.Modules[module] = nil
+	Channel.Modules[module] = nil
 
-	if (lib.Slave.Delay < 4) then
-		lib.Slave.Delay = 4
-		lib.Slave:Show()
-	end
+	lib:UpdateChannels(4)
 end
 
 
 function lib:Call(channel, module, func, ...)
 	local sig = string.format("CommChannel:Call(%q, %q, %q, ...)", channel, module, func)
-	local Spec = self.Specs[channel]
-	if (Spec == nil) then
+	local Channel = self.Channels[channel]
+	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
 		return
 	end
 	
 	arg.n = nil
-	local statusSuccess, objectString = pcall(serializeObject, arg)
+	local success, msg = pcall(serializeObject, arg)
 	
-	if (not statusSuccess) then
-		local errorString = string.gsub(objectString, "Interface\\AddOns\\(.*)\\CommChannel.lua:(%d+): ", "")
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..errorString)
+	if (not success) then
+		msg = string.gsub(msg, "Interface\\AddOns\\(.*)\\CommChannel.lua:(%d+): ", "")
+		DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..msg)
 		return
 	end
 	
-	local serializedString = string.sub(objectString, 2, string.len(objectString) - 1)
-	local channelMessage = module..":"..func.."("..serializedString..")"
-	channelMessage = string.gsub(channelMessage, "s", "⢳")
-	channelMessage = string.gsub(channelMessage, "S", "⡽")
+	local msg = string.sub(msg, 2, string.len(msg) - 1)
+	msg = module..":"..func.."("..msg..")"
+	msg = string.gsub(msg, "s", "⢳")
+	msg = string.gsub(msg, "S", "⡽")
 	
-	if (string.len(channelMessage) > 255) then
+	if (string.len(msg) > 255) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": channelMessage too big")
 		return
 	end
 	
-	if (Spec.Current) then
+	if (Channel.Spec.Current) then
 --		DEFAULT_CHAT_FRAME:AddMessage(sig..": sending message to channel: "..channelMessage)
-		SendChatMessage(channelMessage, "CHANNEL", nil, GetChannelName(Spec.Current))
+		SendChatMessage(msg, "CHANNEL", nil, GetChannelName(Channel.Spec.Current))
 	else
 --		DEFAULT_CHAT_FRAME:AddMessage(sig..": no active channel")
+	end
+end
+
+function lib:Secure(channel, token)
+	local sig = string.format("CommChannel:Secure(%q, %q)", channel, token)
+	
+	if (channel == "raid") then
+		for raidID=1,GetNumRaidMembers() do
+			local name, rank = GetRaidRosterInfo(raidID)
+			if (name == UnitName("player")) then
+				if (rank < 2) then
+					DEFAULT_CHAT_FRAME:AddMessage(string.format("%s: Only the raid leader can secure the raid channel.", sig))
+					return
+				end
+			end
+		end
+		
+		SendChatMessage("RAID", "Securing CommChannel: "..(token or "(none)"))
+	else
+		DEFAULT_CHAT_FRAME:AddMessage(string.format("%s: Channel not supported.", sig))
 	end
 end
