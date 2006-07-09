@@ -11,20 +11,24 @@ local function strip(name)
   return string.gsub(name, "%W", "")
 end
 
-local limit = tonumber("FFFFFF", 16)
+local prime = 16777213
 local function crc(text)
     local counter = 1
     
-    for i = 1,string.len(text) do
-        counter = counter + (string.byte(text, i) * 17 * i)
-    end
+    for i=1,string.len(text) do
+		counter = counter * ((string.byte(text, i) + i) * 17)
+	end
     
-    counter = math.mod(counter, limit)
+    counter = math.mod(counter, prime)
     return string.format("%06X", counter)
 end
 
-local function build(token, length)
-	return string.sub(strip(token), 1, length)..crc(token)
+local function channel(prefix, token, length)
+	if (token == nil) then
+		return nil
+	end
+	
+	return prefix..string.sub(strip(token), 1, length)..crc(token)
 end
 
 --[[
@@ -32,12 +36,7 @@ end
 ]]
 local function nameGenerate()
 	local guildName = GetGuildInfo("player")
-	
-	if (guildName) then
-		return "CommGu"..build(guildName, 8)
-	end
-	
-	return nil
+	return channel("CommGu", guildName, 8)
 end
 
 local function senderValidate(senderName)
@@ -84,12 +83,7 @@ end
 
 local function nameGenerate()
 	local unitName = getLeader()
-	
-	if (unitName) then
-		return "CommRa"..build(unitName, 8)
-	else
-		return nil
-	end
+	return channel("CommRa", unitName, 8)
 end
 
 local function senderValidate(senderName)

@@ -34,6 +34,17 @@ end
 	The AddOn
 ]]
 
+local function encode(text)
+	text = string.gsub(text, "([h°])", "°%1")
+	return text.."°"
+end
+
+local function decode(text)
+	text = string.gsub(text, "([Ss])h", "%1")
+	text = string.gsub(text, "°([h°])", "%1")
+	text = string.gsub(text, "^(.*)°.-$", "%1")
+	return text
+end
 --[[
 	Manager Frame
 ]]
@@ -69,8 +80,7 @@ local function onEvent()
 		for _, Channel in lib.Channels do
 			if (Channel.Spec.Current and arg8 == GetChannelName(Channel.Spec.Current)) then
 				if (Channel.Spec.Sender.Validate(arg2)) then
-					arg1 = string.gsub(arg1, "⢳", "s")
-					arg1 = string.gsub(arg1, "⡽", "S")
+					arg1 = decode(arg1)
 					local _, _, module, func, argString = string.find(arg1, "(%a-):(%a-)%((.*)%)")
 					if (module and func and argString) then
 						local object = Channel.Modules[module]
@@ -327,9 +337,7 @@ function lib:Call(channel, module, func, ...)
 	end
 	
 	local msg = string.sub(msg, 2, string.len(msg) - 1)
-	msg = module..":"..func.."("..msg..")"
-	msg = string.gsub(msg, "s", "⢳")
-	msg = string.gsub(msg, "S", "⡽")
+	msg = encode(module..":"..func.."("..msg..")")
 	
 	if (string.len(msg) > 255) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": channelMessage too big")
