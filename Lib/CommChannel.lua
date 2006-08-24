@@ -34,6 +34,8 @@ end
 	The AddOn
 ]]
 
+local prefix = "⠀" -- U+2800 BRAILLE PATTERN BLANK
+
 local sfind = string.find
 local sformat = string.format
 local sgsub = string.gsub
@@ -59,7 +61,7 @@ local function loadArgs(s)
 end
 
 local function onEvent()
-	if (arg1 == "CommChannel") then
+	if (arg1 == prefix) then
 		local Channel = lib.Channels[arg3]
 		local _, _, module, func, argString = sfind(arg2, "^(%a-):(%a-)%((.*)%)$")
 		if (module and func and argString) then
@@ -218,5 +220,5 @@ function lib:Call(channel, module, func, ...)
 		return
 	end
 	
-	SendAddonMessage("CommChannel", msg, channel)
+	SendAddonMessage(prefix, msg, channel)
 end

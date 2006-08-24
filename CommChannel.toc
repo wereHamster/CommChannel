@@ -1,5 +1,5 @@
 ## Interface: 11200
 ## Title: CommChannel
-## Author: Shag
+## Author: wereHamster
 
 Lib\CommChannel.lua
