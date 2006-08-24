@@ -1,6 +1,5 @@
-## Interface: 11100
+## Interface: 11200
 ## Title: CommChannel
 ## Author: Shag
 
 Lib\CommChannel.lua
-Lib\CommChannelSpecs.lua
