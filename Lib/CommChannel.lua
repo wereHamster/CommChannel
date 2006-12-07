@@ -36,21 +36,20 @@ end
 
 local prefix = "⠀" -- U+2800 BRAILLE PATTERN BLANK
 
-local sfind = string.find
-local sformat = string.format
-local sgsub = string.gsub
-local slen = string.len
-local ssub = string.sub
+local match = string.match
+local format = string.format
+local gsub = string.gsub
+local sub = string.sub
 
 local argLists = { }
 setmetatable(argLists, { __mode = "kv" })
 
 local function loadArgs(s)
 	if (argLists[s] == nil) then
-		argFunc = loadstring("return "..s)
+		local argFunc = loadstring("return "..s)
 		if (argFunc) then
 			setfenv(argFunc, { })
-			argList = { pcall(argFunc) }
+			local argList = { pcall(argFunc) }
 			if (argList[1]) then
 				argLists[s] = argList
 			end
@@ -63,7 +62,7 @@ end
 local function onEvent()
 	if (arg1 == prefix) then
 		local Channel = lib.Channels[arg3]
-		local _, _, module, func, argString = sfind(arg2, "^(%a-):(%a-)%((.*)%)$")
+		local module, func, argString = match(arg2, "^(%a-):(%a-)%((.*)%)$")
 		if (module and func and argString) then
 			local object = Channel[module]
 			if (object and object[func]) then
@@ -90,51 +89,47 @@ lib.Slave:SetScript("OnEvent", onEvent)
 	Object Serialization
 ]]
 
-local function getTableCount(luaTable)
-	local tableCount = 0
-	
-	for _, _ in pairs(luaTable) do 
-		tableCount = tableCount + 1
-	end
-	
-	return tableCount
+local function count(tbl)
+	local num = 0
+	for _, _ in pairs(tbl) do num = num + 1 end
+	return num
 end
 
-local function serializeObject(luaObject)
-	if (luaObject == nil) then
+local function serializeObject(obj)
+	if (obj == nil) then
 		return "" 
-	elseif type(luaObject) == "string" then
-		return sformat("%q", luaObject)
-	elseif type(luaObject) == "table" then
-		local serializedString = "{"
+	elseif (type(obj) == "string") then
+		return format("%q", obj)
+	elseif (type(obj) == "table") then
+		local str = "{"
 		
-		if (next(luaObject) == nil) then
+		if (next(obj) == nil) then
 			return "{}"
-		elseif luaObject[1] and table.getn(luaObject) == getTableCount(luaObject) then
-			for i = 1, table.getn(luaObject) do
-				serializedString = serializedString..serializeObject(luaObject[i])..","
+		elseif (obj[1] and table.getn(obj) == count(obj)) then
+			for i = 1, table.getn(obj) do
+				str = str..serializeObject(obj[i])..","
 			end
 		else
-			for tableKey, tableValue in pairs(luaObject) do
-				if (type(tableKey) == "number") then
-					serializedString = serializedString.."["..tableKey.."]="
-				elseif (type(tableKey) == "string") then
-					serializedString = serializedString..tableKey.."="
+			for key, val in pairs(obj) do
+				if (type(key) == "number") then
+					str = str.."["..val.."]="
+				elseif (type(key) == "string") then
+					str = str..val.."="
 				else
-					error("table key has unsupported type: " .. type(luaObject))
+					error("table key has unsupported type: " .. type(key))
 				end
 
-				serializedString = serializedString..serializeObject(tableValue)..","
+				str = str..serializeObject(val)..","
 			end
 		end
 
-		return ssub(serializedString, 0, slen(serializedString) - 1).."}"
-	elseif type(luaObject) == "number" then
-		return tostring(luaObject)
-	elseif type(luaObject) == "boolean" then
-		return luaObject and "true" or "false"
+		return sub(str, 0, -1).."}"
+	elseif (type(obj) == "number") then
+		return tostring(obj)
+	elseif (type(obj) == "boolean") then
+		return obj and "true" or "false"
 	else
-		error("can't serialize a " .. type(luaObject))
+		error("can't serialize a " .. type(obj))
 	end
 end
 
@@ -148,11 +143,11 @@ local clientInterface = { }
 local clientMetatable = { __index = clientInterface }
 
 function clientInterface:Call(func, ...)
-	lib:Call(self.channel, self.module, func, unpack(arg))
+	lib:Call(self[1], self[2], func, ...)
 end
 
 function lib:Create(channel, module, iface)
-	local sig = sformat("CommChannel:Create(%q, %q, [iface])", channel, module)
+	local sig = format("CommChannel:Create(%q, %q, [iface])", channel, module)
 	local Channel = self.Channels[channel]
 	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
@@ -171,16 +166,11 @@ function lib:Create(channel, module, iface)
 	
 	Channel[module] = iface
 
-	local clientModule = { }
-	setmetatable(clientModule, clientMetatable)
-	clientModule.channel = channel
-	clientModule.module = module
-
-	return clientModule
+	return setmetatable({ channel, module }, clientMetatable)
 end
 
 function lib:Destroy(channel, module)
-	local sig = sformat("CommChannel:Destroy(%q, %q)", channel, module)
+	local sig = format("CommChannel:Destroy(%q, %q)", channel, module)
 	local Channel = self.Channels[channel]
 	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
@@ -197,25 +187,28 @@ end
 
 
 function lib:Call(channel, module, func, ...)
-	local sig = sformat("CommChannel:Call(%q, %q, %q, ...)", channel, module, func)
+	local sig = format("CommChannel:Call(%q, %q, %q, ...)", channel, module, func)
 	local Channel = self.Channels[channel]
 	if (Channel == nil) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
 		return
 	end
 	
-	arg.n = nil
-	local success, msg = pcall(serializeObject, arg)
-	
-	if (not success) then
-		msg = sgsub(msg, "(.*)CommChannel.lua:(%d+): ", "")
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..msg)
-		return
+	local str = ""
+	for idx=1,select("#", ...) do
+		local ret, tmp = pcall(serializeObject, select(idx, ...))
+		if (not ret) then
+			tmp = gsub(tmp, "(.*)CommChannel.lua:(%d+): ", "")
+			DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..tmp)
+			return
+		end
+		
+		str = format("%s,%s", str, tmp)
 	end
 	
-	local msg = module..":"..func.."("..ssub(msg, 2, slen(msg) - 1)..")"
+	local msg = module..":"..func.."("..sub(str, 2)..")"
 	
-	if (slen(msg) > (255 - 12)) then
+	if (#msg > (255 - 12)) then
 		DEFAULT_CHAT_FRAME:AddMessage(sig..": channelMessage too big")
 		return
 	end
