@@ -4,31 +4,18 @@
 ]]
 
 local libName, libMajor, libMinor = "CommChannel", "1.0", tonumber(string.sub("$Revision$", 12, -3))
-
-local libMetatable = {
-	__call = function(stub, major, minor)
-		if (minor) then
-			stub[major] = { }
-			stub[major].libVersion = minor
-		end
-		return stub[major]
-	end,
-}
+local libMetatable = { __call = function(self, major) self[major] = self[major] or { }; return self[major] end }
 
 if (getglobal(libName) == nil) then
 	setglobal(libName, setmetatable({ }, libMetatable))
 end
 
-local stub = getglobal(libName)
-
-local lib = stub(libMajor)
-if (lib == nil) then
-	lib = stub(libMajor, libMinor)
-elseif (lib.libVersion >= libMinor) then
+local lib = getglobal(libName)(libMajor)
+if (lib.libVersion and lib.libVersion >= libMinor) then
 	return
-else
-	lib.libVersion = libMinor
 end
+
+lib.libVersion = libMinor
 
 --[[
 	The AddOn
@@ -41,9 +28,7 @@ local format = string.format
 local gsub = string.gsub
 local sub = string.sub
 
-local argLists = { }
-setmetatable(argLists, { __mode = "kv" })
-
+local argLists = setmetatable({ }, { __mode = "kv" })
 local function loadArgs(s)
 	if (argLists[s] == nil) then
 		local argFunc = loadstring("return "..s)
@@ -59,7 +44,7 @@ local function loadArgs(s)
 	return argLists[s]
 end
 
-local function onEvent()
+local function onEvent(self, event, arg1, arg2, arg3)
 	if (arg1 == prefix) then
 		local Channel = lib.Channels[arg3]
 		local module, func, argString = match(arg2, "^(%a-):(%a-)%((.*)%)$")
@@ -147,71 +132,26 @@ function clientInterface:Call(func, ...)
 end
 
 function lib:Create(channel, module, iface)
-	local sig = format("CommChannel:Create(%q, %q, [iface])", channel, module)
-	local Channel = self.Channels[channel]
-	if (Channel == nil) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
-		return
-	end
-	
-	if (Channel[module]) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": module is already registered")
-		return
-	end
-	
-	if (type(iface) ~= "table") then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": iface has wrong type")
-		return
-	end
-	
-	Channel[module] = iface
-
+	self.Channels[channel][module] = iface
 	return setmetatable({ channel, module }, clientMetatable)
 end
 
 function lib:Destroy(channel, module)
-	local sig = format("CommChannel:Destroy(%q, %q)", channel, module)
-	local Channel = self.Channels[channel]
-	if (Channel == nil) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
-		return
-	end
-	
-	if (Channel[module] == nil) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": module is not registered")
-		return
-	end
-	
-	Channel[module] = nil
+	self.Channels[channel][module] = nil
 end
 
-
-function lib:Call(channel, module, func, ...)
-	local sig = format("CommChannel:Call(%q, %q, %q, ...)", channel, module, func)
-	local Channel = self.Channels[channel]
-	if (Channel == nil) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": unknown channel")
-		return
-	end
-	
+function lib:Call(channel, module, func, ...)	
 	local str = ""
 	for idx=1,select("#", ...) do
 		local ret, tmp = pcall(serializeObject, select(idx, ...))
 		if (not ret) then
 			tmp = gsub(tmp, "(.*)CommChannel.lua:(%d+): ", "")
-			DEFAULT_CHAT_FRAME:AddMessage(sig..": error in serializeObject(): "..tmp)
+			DEFAULT_CHAT_FRAME:AddMessage("CommChannel: error in serialization: "..tmp)
 			return
 		end
 		
 		str = format("%s,%s", str, tmp)
 	end
 	
-	local msg = module..":"..func.."("..sub(str, 2)..")"
-	
-	if (#msg > (255 - 12)) then
-		DEFAULT_CHAT_FRAME:AddMessage(sig..": channelMessage too big")
-		return
-	end
-	
-	SendAddonMessage(prefix, msg, channel)
+	SendAddonMessage(prefix, module..":"..func.."("..sub(str, 2)..")", channel)
 end
