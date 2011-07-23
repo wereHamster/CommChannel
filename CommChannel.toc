@@ -1,4 +1,4 @@
-## Interface: 20003
+## Interface: 40200
 ## Title: CommChannel
 ## Author: wereHamster
 
